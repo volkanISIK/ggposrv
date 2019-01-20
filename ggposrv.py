@@ -358,6 +358,8 @@ class GGPOClient(SocketServer.BaseRequestHandler):
 		self.country = "null"		# Client's country
 		self.cc = "null"		# Client's country code
 		self.lastmsgtime = 0		# timestamp of the last chat message
+		self.laststatuschangetime = 0 # timestamp of the last status change time for afk the spammer who switch between away and available status
+		self.statuschangespamhit = 0
 		self.challengetime = 0		# timestamp of the last challenge
 		self.lastmsg = ''		# last chat message
 		self.spamhit = 0		# how many times has been warned for spam
@@ -1625,6 +1627,28 @@ class GGPOClient(SocketServer.BaseRequestHandler):
 
 		status,sequence = params
 
+		timestamp = time.time()
+
+		self.statuschangespamhit += 0.2
+		# status spammers who switching between awayfromkb and available status can't do this within 3 sec
+		if ((self.status == 0 and status == 1) or (self.status == 1 and status == 0)) and (timestamp-self.laststatuschangetime < 3.0):
+			# nick="System"
+			# msg="Please do not spam"
+			# negseq=4294967294 #'\xff\xff\xff\xfe'
+			# response = self.reply(negseq,self.sizepad(nick)+self.sizepad(msg))
+			# logging.debug('to %s: %r' % (self.client_ident(), response))
+			# self.send_queue.append(response)
+			self.laststatuschangetime = timestamp
+			self.statuschangespamhit += 3.0
+			return
+
+
+		self.laststatuschangetime = timestamp
+
+		# kick the status spammer from server if statuschangespamhit is over 20
+		if self.statuschangespamhit > 20.0:
+			ggposerver.clients.pop(self.nick)
+
 		# send ack to the client
 		if (sequence >4):
 			self.send_ack(sequence)
@@ -1791,7 +1815,7 @@ class GGPOClient(SocketServer.BaseRequestHandler):
 				pdu+=self.pad2hex(channel.port)
 				pdu+=self.pad2hex(i)
 
-		
+
 		response = self.reply(sequence,'\x00\x00\x00\x00'+self.pad2hex(i)+pdu)
 		logging.debug('to %s: %r' % (self.client_ident(), response))
 		self.send_queue.append(response)
